@@ -13,8 +13,9 @@ You can download it from "Releases" in the menu on the right side of the screen.
  
 ## ●Features
 - plumOS-jz47xx is based on OpenDingux (VERSION_ID=2023.11)
-     - Works with Ambernic RG300X and RG280V
+     - Works with Anbernic RG300X and RG280V
 - retroarch uses the latest version "1.17.0"
+     - 98 cores available
 - Features of RG300X
      - USB-DAC and Bluetooth-Audio devices can be used with OTG port
          - Bluetooth-Audio whose operation has been confirmed

@@ -13,8 +13,9 @@ custom firmware based on opendingux
  
 ## ●特徴
 - plumOS-jz47xxはOpenDingux(VERSION_ID=2023.11)がベースで作られています
-    - Ambernic RG300XとRG280Vで動作します
+    - Anbernic RG300XとRG280Vで動作します
 - retroarchは最新版の「1.17.0」を採用
+    - 98個のコアが利用可能
 - RG300Xの特徴
     - OTGポートにてUSB-DACとBluetooth-Audioデバイスが利用可能
         - 動作確認が取れているBluetooth-Audio
