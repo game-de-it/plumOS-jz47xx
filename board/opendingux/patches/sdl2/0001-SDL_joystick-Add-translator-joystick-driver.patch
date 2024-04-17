@@ -1,0 +1,784 @@
+From 192d7ddbd7c9b4815296cb13bda78f8ad1f0e456 Mon Sep 17 00:00:00 2001
+From: Paul Cercueil <paul@crapouillou.net>
+Date: Sun, 18 Dec 2022 16:36:46 +0100
+Subject: [PATCH] SDL_joystick: Add "translator" joystick driver
+
+It permits to create a virtual joystick device created from more than
+one input source (e.g. other joysticks, and/or keyboard).
+
+This driver is configured using the "SDL_JOYSTICK_TRANSLATOR_MAP"
+environment variable. This environment variable is expected to be set
+by the operating system.
+
+For instance, on the OpenDingux handhelds running Linux (GCW-Zero,
+Anbernic RG-350, etc), where there is one input device per analog stick
+plus one input device for the face buttons, this driver permits to
+create a virtual joystick device that will feature all the analog
+sticks, the d-pad, and face buttons in one single SDL_joystick.
+
+The "SDL_JOYSTICK_TRANSLATOR_MAP" is a semicolon-separated list of
+device mappings. Each device mapping is a comma-separated list of the
+device's name followed by input mappings. Input mappings can be:
+
+- axis:<joystick_id>:<joystick_axis>
+- hat:<joystick_id>:<joystick_hat>
+- hat:kb:<scancode_up>:<scancode_right>:<scancode_down>:<scancode_left>
+- btn:<joystick_id>:<joystick_btn>
+- btn:kb:<scancode>
+
+For instance, for the GCW-Zero, the SDL_JOYSTICK_TRANSLATOR_MAP will be
+(carriage returns added for lisibility):
+
+SDL_JOYSTICK_TRANSLATOR_MAP="OpenDingux GCW-Zero Virtual Device,
+                             axis:190000006a6f79737469636b73000000:0,
+                             axis:190000006a6f79737469636b73000000:1,
+                             axis:190000006a6f79737469636b73000000:2,
+                             axis:190000006a6f79737469636b73000000:3,
+                             btn:kb:224,
+                             btn:kb:226,
+                             btn:kb:225,
+                             btn:kb:44,
+                             btn:kb:40,
+                             btn:kb:41,
+                             btn:kb:43,
+                             btn:kb:42,
+                             btn:kb:75,
+                             btn:kb:78,
+                             btn:kb:84,
+                             btn:kb:99,
+                             hat:kb:82:79:81:80"
+
+Signed-off-by: Paul Cercueil <paul@crapouillou.net>
+---
+ CMakeLists.txt                           |   6 +
+ configure.ac                             |  21 +
+ include/SDL_config.h.cmake               |   1 +
+ include/SDL_config.h.in                  |   1 +
+ include/SDL_config_android.h             |   1 +
+ include/SDL_config_iphoneos.h            |   1 +
+ include/SDL_config_macosx.h              |   1 +
+ include/SDL_config_os2.h                 |   1 +
+ include/SDL_config_pandora.h             |   1 +
+ include/SDL_config_windows.h             |   1 +
+ include/SDL_config_winrt.h               |   1 +
+ src/joystick/SDL_joystick.c              |   3 +
+ src/joystick/SDL_sysjoystick.h           |   1 +
+ src/joystick/translator/SDL_translator.c | 502 +++++++++++++++++++++++
+ 14 files changed, 542 insertions(+)
+ create mode 100644 src/joystick/translator/SDL_translator.c
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b38a8bb..d2364c8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -479,6 +479,7 @@ set_option(SDL_HIDAPI              "Enable the HIDAPI subsystem" ON)
+ dep_option(SDL_HIDAPI_LIBUSB       "Use libusb for low level joystick drivers" OFF SDL_HIDAPI OFF)
+ dep_option(SDL_HIDAPI_JOYSTICK     "Use HIDAPI for low level joystick drivers" ON SDL_HIDAPI OFF)
+ dep_option(SDL_VIRTUAL_JOYSTICK    "Enable the virtual-joystick driver" ON SDL_HIDAPI OFF)
++dep_option(SDL_TRANSLATOR_JOYSTICK "Enable the translated-joystick driver" ON SDL_HIDAPI OFF)
+ set_option(SDL_LIBUDEV             "Enable libudev support" ON)
+ set_option(SDL_ASAN                "Use AddressSanitizer to detect memory errors" OFF)
+ option_string(SDL_VENDOR_INFO      "Vendor name and/or version to add to SDL_REVISION" "")
+@@ -973,6 +974,11 @@ if(SDL_ASSEMBLY)
+     endif()
+     check_include_file("immintrin.h" HAVE_IMMINTRIN_H)
+   endif()
++  if(SDL_TRANSLATOR_JOYSTICK)
++  set(SDL_JOYSTICK_TRANSLATOR 1)
++  file(GLOB JOYSTICK_TRANSLATOR_SOURCES ${SDL2_SOURCE_DIR}/src/joystick/translator/*.c)
++  set(SOURCE_FILES ${SOURCE_FILES} ${JOYSTICK_TRANSLATOR_SOURCES})
++  endif()
+ endif()
+ 
+ # TODO: Can't deactivate on FreeBSD? w/o LIBC, SDL_stdinc.h can't define
+diff --git a/configure.ac b/configure.ac
+index 5588958..e3528b6 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -3742,6 +3742,19 @@ CheckVirtualJoystick()
+     fi
+ }
+ 
++dnl Set up the Translator joystick driver.
++CheckTranslatorJoystick()
++{
++    AC_ARG_ENABLE(joystick-translator,
++[AS_HELP_STRING([--enable-joystick-translator], [enable joystick translator [default=yes]])],
++                  , enable_joystick_translator=yes)
++    if test x$enable_joystick = xyes -a x$enable_joystick_translator = xyes; then
++        AC_DEFINE(SDL_JOYSTICK_TRANSLATOR, 1, [ ])
++        SOURCES="$SOURCES $srcdir/src/joystick/translator/*.c"
++        have_joystick_translated=yes
++    fi
++}
++
+ dnl Do this on all platforms, before everything else (other things might want to override it).
+ CheckWarnAll
+ CheckUnusedLocalTypedefs
+@@ -4677,6 +4690,9 @@ esac
+ dnl Permit use of virtual joystick APIs on any platform (subject to configure options)
+ CheckVirtualJoystick
+ 
++dnl Permit use of translator joysticks on any platform (subject to configure options)
++CheckTranslatorJoystick
++
+ # Check whether to install sdl2-config
+ AC_MSG_CHECKING(whether to install sdl2-config)
+ AC_ARG_ENABLE([sdl2-config],
+@@ -4947,6 +4963,11 @@ if test x$have_joystick_virtual = xyes; then
+ else
+     SUMMARY="${SUMMARY}Enable virtual joystick APIs : NO\n"
+ fi
++if test x$have_joystick_translated = xyes; then
++    SUMMARY="${SUMMARY}Enable translated joystick APIs : YES\n"
++else
++    SUMMARY="${SUMMARY}Enable translated joystick APIs : NO\n"
++fi
+ if test x$have_samplerate_h_hdr = xyes; then
+     SUMMARY="${SUMMARY}Using libsamplerate : YES\n"
+ else
+diff --git a/include/SDL_config.h.cmake b/include/SDL_config.h.cmake
+index 35923d0..602cd45 100644
+--- a/include/SDL_config.h.cmake
++++ b/include/SDL_config.h.cmake
+@@ -351,6 +351,7 @@
+ #cmakedefine SDL_JOYSTICK_RAWINPUT @SDL_JOYSTICK_RAWINPUT@
+ #cmakedefine SDL_JOYSTICK_EMSCRIPTEN @SDL_JOYSTICK_EMSCRIPTEN@
+ #cmakedefine SDL_JOYSTICK_VIRTUAL @SDL_JOYSTICK_VIRTUAL@
++#cmakedefine SDL_JOYSTICK_TRANSLATOR @SDL_JOYSTICK_TRANSLATOR@
+ #cmakedefine SDL_JOYSTICK_VITA @SDL_JOYSTICK_VITA@
+ #cmakedefine SDL_JOYSTICK_PSP @SDL_JOYSTICK_PSP@
+ #cmakedefine SDL_JOYSTICK_PS2 @SDL_JOYSTICK_PS2@
+diff --git a/include/SDL_config.h.in b/include/SDL_config.h.in
+index d6460b7..719a4a0 100644
+--- a/include/SDL_config.h.in
++++ b/include/SDL_config.h.in
+@@ -333,6 +333,7 @@
+ #undef SDL_JOYSTICK_RAWINPUT
+ #undef SDL_JOYSTICK_EMSCRIPTEN
+ #undef SDL_JOYSTICK_VIRTUAL
++#undef SDL_JOYSTICK_TRANSLATOR
+ #undef SDL_HAPTIC_DUMMY
+ #undef SDL_HAPTIC_ANDROID
+ #undef SDL_HAPTIC_LINUX
+diff --git a/include/SDL_config_android.h b/include/SDL_config_android.h
+index d88c026..58ef5fb 100644
+--- a/include/SDL_config_android.h
++++ b/include/SDL_config_android.h
+@@ -152,6 +152,7 @@
+ #define SDL_JOYSTICK_ANDROID    1
+ #define SDL_JOYSTICK_HIDAPI     1
+ #define SDL_JOYSTICK_VIRTUAL    1
++/* #undef SDL_JOYSTICK_TRANSLATOR */
+ #define SDL_HAPTIC_ANDROID  1
+ 
+ /* Enable sensor driver */
+diff --git a/include/SDL_config_iphoneos.h b/include/SDL_config_iphoneos.h
+index 02011c4..9f55cae 100644
+--- a/include/SDL_config_iphoneos.h
++++ b/include/SDL_config_iphoneos.h
+@@ -151,6 +151,7 @@
+ /*#define SDL_JOYSTICK_HIDAPI 1*/
+ #define SDL_JOYSTICK_MFI 1
+ #define SDL_JOYSTICK_VIRTUAL    1
++/* #undef SDL_JOYSTICK_TRANSLATOR */
+ 
+ #ifdef __TVOS__
+ #define SDL_SENSOR_DUMMY    1
+diff --git a/include/SDL_config_macosx.h b/include/SDL_config_macosx.h
+index d7ad6cc..b91a894 100644
+--- a/include/SDL_config_macosx.h
++++ b/include/SDL_config_macosx.h
+@@ -161,6 +161,7 @@
+ #define SDL_JOYSTICK_HIDAPI 1
+ #define SDL_JOYSTICK_IOKIT  1
+ #define SDL_JOYSTICK_VIRTUAL    1
++/* #undef SDL_JOYSTICK_TRANSLATOR */
+ #define SDL_HAPTIC_IOKIT    1
+ 
+ /* The MFI controller support requires ARC Objective C runtime */
+diff --git a/include/SDL_config_os2.h b/include/SDL_config_os2.h
+index 2effe1a..0a917f6 100644
+--- a/include/SDL_config_os2.h
++++ b/include/SDL_config_os2.h
+@@ -48,6 +48,7 @@
+ #define SDL_LIBUSB_DYNAMIC "usb100.dll"
+ #endif
+ /*#undef SDL_JOYSTICK_VIRTUAL */
++/*#undef SDL_JOYSTICK_TRANSLATOR */
+ 
+ /* Enable OpenGL support */
+ /* #undef SDL_VIDEO_OPENGL */
+diff --git a/include/SDL_config_pandora.h b/include/SDL_config_pandora.h
+index c74fa0c..89d9ec5 100644
+--- a/include/SDL_config_pandora.h
++++ b/include/SDL_config_pandora.h
+@@ -120,6 +120,7 @@
+ #define SDL_INPUT_LINUXEV 1
+ #define SDL_JOYSTICK_LINUX 1
+ #define SDL_JOYSTICK_VIRTUAL 1
++/* #undef SDL_JOYSTICK_TRANSLATOR */
+ #define SDL_HAPTIC_LINUX 1
+ 
+ #define SDL_SENSOR_DUMMY 1
+diff --git a/include/SDL_config_windows.h b/include/SDL_config_windows.h
+index 01322c1..6dedd7c 100644
+--- a/include/SDL_config_windows.h
++++ b/include/SDL_config_windows.h
+@@ -259,6 +259,7 @@ typedef unsigned int uintptr_t;
+ #define SDL_JOYSTICK_RAWINPUT   1
+ #endif
+ #define SDL_JOYSTICK_VIRTUAL    1
++/* #undef SDL_JOYSTICK_TRANSLATOR */
+ #ifdef HAVE_WINDOWS_GAMING_INPUT_H
+ #define SDL_JOYSTICK_WGI    1
+ #endif
+diff --git a/include/SDL_config_winrt.h b/include/SDL_config_winrt.h
+index 8efde90..24e3057 100644
+--- a/include/SDL_config_winrt.h
++++ b/include/SDL_config_winrt.h
+@@ -166,6 +166,7 @@
+ #define SDL_HAPTIC_DISABLED 1
+ #else
+ #define SDL_JOYSTICK_VIRTUAL    1
++/* #undef SDL_JOYSTICK_TRANSLATOR */
+ #if (NTDDI_VERSION >= NTDDI_WIN10)
+ #define SDL_JOYSTICK_WGI    1
+ #define SDL_HAPTIC_DISABLED 1
+diff --git a/src/joystick/SDL_joystick.c b/src/joystick/SDL_joystick.c
+index 834e83d..f9b76e7 100644
+--- a/src/joystick/SDL_joystick.c
++++ b/src/joystick/SDL_joystick.c
+@@ -96,6 +96,9 @@ static SDL_JoystickDriver *SDL_joystick_drivers[] = {
+ #ifdef SDL_JOYSTICK_PSP
+     &SDL_PSP_JoystickDriver,
+ #endif
++#ifdef SDL_JOYSTICK_TRANSLATOR
++    &SDL_TRANSLATOR_JoystickDriver,
++#endif
+ #ifdef SDL_JOYSTICK_VIRTUAL
+     &SDL_VIRTUAL_JoystickDriver,
+ #endif
+diff --git a/src/joystick/SDL_sysjoystick.h b/src/joystick/SDL_sysjoystick.h
+index a93fa66..9e795c6 100644
+--- a/src/joystick/SDL_sysjoystick.h
++++ b/src/joystick/SDL_sysjoystick.h
+@@ -241,6 +241,7 @@ extern SDL_JoystickDriver SDL_RAWINPUT_JoystickDriver;
+ extern SDL_JoystickDriver SDL_IOS_JoystickDriver;
+ extern SDL_JoystickDriver SDL_LINUX_JoystickDriver;
+ extern SDL_JoystickDriver SDL_VIRTUAL_JoystickDriver;
++extern SDL_JoystickDriver SDL_TRANSLATOR_JoystickDriver;
+ extern SDL_JoystickDriver SDL_WGI_JoystickDriver;
+ extern SDL_JoystickDriver SDL_WINDOWS_JoystickDriver;
+ extern SDL_JoystickDriver SDL_WINMM_JoystickDriver;
+diff --git a/src/joystick/translator/SDL_translator.c b/src/joystick/translator/SDL_translator.c
+new file mode 100644
+index 0000000..2e6cbbc
+--- /dev/null
++++ b/src/joystick/translator/SDL_translator.c
+@@ -0,0 +1,502 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 2021 Paul Cercueil <paul@crapouillou.net>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++     claim that you wrote the original software. If you use this software
++     in a product, an acknowledgment in the product documentation would be
++     appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++     misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++#include "../../SDL_internal.h"
++
++#ifdef SDL_JOYSTICK_TRANSLATOR
++
++#include "SDL_joystick.h"
++#include "SDL_keyboard.h"
++#include "../SDL_sysjoystick.h"
++#include "../SDL_joystick_c.h"
++
++static int num_translator_joysticks;
++
++enum SDL_translator_item_type
++{
++    SDL_TRANSLATOR_AXIS,
++    SDL_TRANSLATOR_HAT,
++    SDL_TRANSLATOR_BUTTON,
++};
++
++enum SDL_translator_item_source
++{
++    SDL_TRANSLATOR_SOURCE_JOYSTICK,
++    SDL_TRANSLATOR_SOURCE_KEYBOARD,
++};
++
++typedef struct SDL_translator_item
++{
++    enum SDL_translator_item_type type;
++    enum SDL_translator_item_source source;
++
++    SDL_Joystick *joystick;
++    int device_index;
++    int srccode[4];
++    int dstcode;
++
++    struct SDL_translator_item *next;
++} SDL_translator_item;
++
++typedef struct SDL_translator_joystick
++{
++    unsigned int naxes, nbuttons, nhats;
++    int device_index;
++    SDL_JoystickID joystickid;
++    char *name;
++
++    struct SDL_translator_item *items;
++    struct SDL_translator_joystick *next;
++} SDL_translator_joystick;
++
++static SDL_translator_joystick *SDL_joylist;
++
++static int
++ProcessMap(char *map, char delimiter, int (*cb)(char *, void *), void *d)
++{
++    char *delim;
++    int ret;
++
++    while (map != NULL) {
++        delim = SDL_strchr(map, delimiter);
++        if (delim != NULL) {
++            *delim++ = '\0';
++        }
++        ret = (*cb)(map, d);
++        if (ret < 0) {
++            return ret;
++        }
++
++        map = delim;
++    }
++
++    return 0;
++}
++
++static int
++ProcessDeviceItem(char *map, void *d)
++{
++    SDL_translator_joystick *joystick = d;
++    enum SDL_translator_item_type type;
++    enum SDL_translator_item_source source;
++    SDL_translator_item *item;
++    SDL_JoystickGUID guid, guid2;
++    int numjoysticks, i, device_index = 0;
++    int dstcode, nb_codes;
++    char *end;
++
++    if (!SDL_strncmp(map, "axis:", sizeof("axis:") - 1)) {
++        dstcode = joystick->naxes++;
++        map += sizeof("axis:") - 1;
++        type = SDL_TRANSLATOR_AXIS;
++    } else if (!SDL_strncmp(map, "hat:", sizeof("hat:") - 1)) {
++        dstcode = joystick->nhats++;
++        map += sizeof("hat:") - 1;
++        type = SDL_TRANSLATOR_HAT;
++    } else if (!SDL_strncmp(map, "btn:", sizeof("btn:") - 1)) {
++        dstcode = joystick->nbuttons++;
++        map += sizeof("btn:") - 1;
++        type = SDL_TRANSLATOR_BUTTON;
++    } else {
++        return SDL_SetError("Invalid device map");
++    }
++
++    if (!SDL_strncmp(map, "kb:", sizeof("kb:") - 1)) {
++        if (type == SDL_TRANSLATOR_AXIS) {
++            return SDL_SetError("Cannot use keyboard key for axis");
++        }
++
++        source = SDL_TRANSLATOR_SOURCE_KEYBOARD;
++    } else {
++        guid = SDL_JoystickGetGUIDFromString(map);
++        numjoysticks = SDL_NumJoysticks();
++
++        for (i = 0; i < numjoysticks; i++) {
++            guid2 = SDL_JoystickGetDeviceGUID(i);
++
++            if (!SDL_memcmp(&guid, &guid2, sizeof(guid))) {
++                break;
++            }
++        }
++
++        if (i == numjoysticks) {
++            return SDL_SetError("Invalid device in map");
++        }
++
++        device_index = i;
++        source = SDL_TRANSLATOR_SOURCE_JOYSTICK;
++    }
++
++    map = SDL_strchr(map, ':');
++    if (!map) {
++        return SDL_SetError("Invalid device map");
++    }
++
++    map += 1;
++
++    if (type == SDL_TRANSLATOR_HAT && source == SDL_TRANSLATOR_SOURCE_KEYBOARD)
++        nb_codes = 4;
++    else
++        nb_codes = 1;
++
++    item = SDL_calloc(1, sizeof(*item));
++    if (item == NULL)
++        return SDL_OutOfMemory();
++
++    item->device_index = device_index;
++    item->dstcode = dstcode;
++    item->type = type;
++    item->source = source;
++
++    for (i = 0; i < nb_codes; i++) {
++        item->srccode[i] = (int) SDL_strtol(map, &end, 10);
++
++        if (end == map ||
++            (i == nb_codes - 1 && *end != '\0') ||
++            (i < nb_codes - 1 && *end != ':')) {
++            SDL_free(item);
++            return SDL_SetError("Invalid device map");
++        }
++
++        map = end + 1;
++    }
++
++    item->next = joystick->items;
++    joystick->items = item;
++
++    return 0;
++}
++
++static void
++FreeJoystick(SDL_translator_joystick *joystick)
++{
++    SDL_translator_item *item, *next;
++
++    for (item = joystick->items; item; item = next) {
++        next = item->next;
++        SDL_free(item);
++    }
++
++    SDL_free(joystick->name);
++    SDL_free(joystick);
++}
++
++static int
++ProcessDevice(char *map, void *d)
++{
++    SDL_translator_joystick *joystick;
++    char *comma, *name;
++    int ret;
++
++    comma = SDL_strchr(map, ',');
++    if (comma == NULL) {
++        return SDL_SetError("Invalid device map");
++    }
++
++    *comma = '\0';
++
++    joystick = SDL_calloc(1, sizeof(*joystick));
++    name = SDL_strdup(map);
++    if (joystick == NULL || name == NULL) {
++        SDL_free(joystick);
++        SDL_free(name);
++        return SDL_OutOfMemory();
++    }
++
++    joystick->name = name;
++    map = comma + 1;
++
++    ret = ProcessMap(map, ',', ProcessDeviceItem, joystick);
++    if (ret) {
++        FreeJoystick(joystick);
++        return ret;
++    }
++
++    joystick->joystickid = SDL_GetNextJoystickInstanceID();
++
++    joystick->next = SDL_joylist;
++    SDL_joylist = joystick;
++    num_translator_joysticks++;
++
++    SDL_PrivateJoystickAdded(joystick->joystickid);
++
++    return 0;
++}
++
++static int
++TRANSLATOR_JoystickInit(void)
++{
++    char *map;
++    int ret;
++
++    map = SDL_getenv("SDL_JOYSTICK_TRANSLATOR_MAP");
++
++    if (map == NULL) {
++        return 0;
++    }
++
++    map = SDL_strdup(map);
++    if (map == NULL) {
++        return SDL_OutOfMemory();
++    }
++
++    ret = ProcessMap(map, ';', ProcessDevice, NULL);
++
++    SDL_free(map);
++
++    return ret;
++}
++
++static int
++TRANSLATOR_JoystickGetCount(void)
++{
++    return num_translator_joysticks;
++}
++
++static void
++TRANSLATOR_JoystickDetect(void)
++{
++}
++
++static const char *
++TRANSLATOR_JoystickGetDeviceName(int device_index)
++{
++    SDL_translator_joystick *js;
++
++    for (js = SDL_joylist; js; js = js->next) {
++        if (js->device_index == device_index) {
++            return js->name;
++        }
++    }
++
++    return "Translated joystick";
++}
++
++static int
++TRANSLATOR_JoystickGetDevicePlayerIndex(int device_index)
++{
++    return -1;
++}
++
++static void
++TRANSLATOR_JoystickSetDevicePlayerIndex(int device_index, int player_index)
++{
++}
++
++static SDL_JoystickGUID TRANSLATOR_JoystickGetDeviceGUID(int device_index)
++{
++    const char *name = TRANSLATOR_JoystickGetDeviceName(device_index);
++    SDL_JoystickGUID guid;
++    Uint16 *guid16 = (Uint16 *)guid.data;
++
++    SDL_zero(guid);
++    *guid16++ = SDL_SwapLE16(SDL_HARDWARE_BUS_UNKNOWN);
++    *guid16++ = SDL_SwapLE16(SDL_crc16(0, name, SDL_strlen(name)));
++    SDL_memcpy((char*)guid16, name, SDL_min(sizeof(guid) - 4, SDL_strlen(name)));
++    return guid;
++}
++
++/* Function to perform the mapping from device index to the instance id for this index */
++static SDL_JoystickID TRANSLATOR_JoystickGetDeviceInstanceID(int device_index)
++{
++    SDL_translator_joystick *js;
++
++    for (js = SDL_joylist; js; js = js->next) {
++        if (js->device_index == device_index) {
++            return js->joystickid;
++        }
++    }
++
++    return -1;
++}
++
++static int
++TRANSLATOR_JoystickRumble(SDL_Joystick *joystick, Uint16 low_frequency_rumble,
++                          Uint16 high_frequency_rumble)
++{
++    return SDL_Unsupported();
++}
++
++static int
++TRANSLATOR_JoystickRumbleTriggers(SDL_Joystick *joystick,
++                                  Uint16 left_rumble, Uint16 right_rumble)
++{
++    return SDL_Unsupported();
++}
++
++static SDL_bool TRANSLATOR_JoystickHasLED(SDL_Joystick *joystick)
++{
++    return SDL_FALSE;
++}
++
++static int
++TRANSLATOR_JoystickSetLED(SDL_Joystick *joystick, Uint8 red,
++                          Uint8 green, Uint8 blue)
++{
++    return SDL_Unsupported();
++}
++
++static int TRANSLATOR_JoystickSetSensorsEnabled(SDL_Joystick *joystick,
++                                                SDL_bool enabled)
++{
++    return SDL_Unsupported();
++}
++
++static void TRANSLATOR_JoystickUpdate(SDL_Joystick *joystick)
++{
++    SDL_translator_joystick *js = (SDL_translator_joystick *) joystick->hwdata;
++    SDL_translator_item *item;
++    const Uint8 *kbstate = SDL_GetKeyboardState(NULL);
++    Uint8 value;
++    int i;
++
++    for (item = js->items; item; item = item->next) {
++        if (item->type == SDL_TRANSLATOR_AXIS) {
++            Sint16 axis_value = SDL_JoystickGetAxis(item->joystick, item->srccode[0]);
++            SDL_PrivateJoystickAxis(joystick, item->dstcode, axis_value);
++        } else if (item->type == SDL_TRANSLATOR_HAT) {
++            if (item->source == SDL_TRANSLATOR_SOURCE_KEYBOARD) {
++                for (value = 0, i = 0; i < 4; i++) {
++                    if (kbstate[item->srccode[i]]) {
++                        value |= 1 << i;
++                    }
++                }
++            } else {
++                value = SDL_JoystickGetHat(item->joystick, item->srccode[0]);
++            }
++
++            SDL_PrivateJoystickHat(joystick, item->dstcode, value);
++        } else {
++            if (item->source == SDL_TRANSLATOR_SOURCE_KEYBOARD) {
++                value = kbstate[item->srccode[0]];
++            } else {
++                value = SDL_JoystickGetButton(item->joystick, item->srccode[0]);
++            }
++
++            SDL_PrivateJoystickButton(joystick, item->dstcode, value);
++        }
++    }
++}
++
++static int TRANSLATOR_JoystickOpen(SDL_Joystick *joystick, int device_index)
++{
++    SDL_translator_joystick *js;
++    SDL_translator_item *item, *item2;
++
++    for (js = SDL_joylist; js; js = js->next) {
++        if (js->device_index == device_index) {
++            break;
++        }
++    }
++
++    if (js == NULL) {
++        return SDL_SetError("No such device");
++    }
++
++    joystick->naxes = js->naxes;
++    joystick->nbuttons = js->nbuttons;
++    joystick->nhats = js->nhats;
++
++    for (item = js->items; item; item = item->next) {
++        item->joystick = SDL_JoystickOpen(item->device_index);
++        if (!item->joystick) {
++            for (item2 = js->items; item2 != item; item2 = item2->next) {
++                SDL_JoystickClose(item2->joystick);
++                item2->joystick = NULL;
++            }
++
++            return SDL_SetError("Unable to open joystick");
++        }
++    }
++
++    joystick->hwdata = (struct joystick_hwdata *) js;
++
++    return 0;
++}
++
++static void TRANSLATOR_JoystickClose(SDL_Joystick *joystick)
++{
++    SDL_translator_joystick *js = (SDL_translator_joystick *) joystick->hwdata;
++    SDL_translator_item *item;
++
++    for (item = js->items; item; item = item->next) {
++        SDL_JoystickClose(item->joystick);
++        item->joystick = NULL;
++    }
++}
++
++void
++TRANSLATOR_JoystickQuit(void)
++{
++    SDL_translator_joystick *next;
++
++    while (SDL_joylist) {
++        next = SDL_joylist->next;
++
++        FreeJoystick(SDL_joylist);
++        SDL_joylist = next;
++    }
++}
++
++static SDL_bool
++TRANSLATOR_JoystickGetGamepadMapping(int device_index, SDL_GamepadMapping *out)
++{
++    return SDL_FALSE;
++}
++
++static int
++TRANSLATOR_JoystickSendEffect(SDL_Joystick *joystick, const void *data, int size)
++{
++    return SDL_Unsupported();
++}
++
++static const char *
++TRANSLATOR_JoystickGetDevicePath(int device_index)
++{
++    return NULL;
++}
++
++SDL_JoystickDriver SDL_TRANSLATOR_JoystickDriver =
++{
++    .Init = TRANSLATOR_JoystickInit,
++    .GetCount = TRANSLATOR_JoystickGetCount,
++    .Detect = TRANSLATOR_JoystickDetect,
++    .GetDeviceName = TRANSLATOR_JoystickGetDeviceName,
++    .GetDevicePath = TRANSLATOR_JoystickGetDevicePath,
++    .GetDevicePlayerIndex = TRANSLATOR_JoystickGetDevicePlayerIndex,
++    .SetDevicePlayerIndex = TRANSLATOR_JoystickSetDevicePlayerIndex,
++    .GetDeviceGUID = TRANSLATOR_JoystickGetDeviceGUID,
++    .GetDeviceInstanceID = TRANSLATOR_JoystickGetDeviceInstanceID,
++    .Open = TRANSLATOR_JoystickOpen,
++    .Rumble = TRANSLATOR_JoystickRumble,
++    .RumbleTriggers = TRANSLATOR_JoystickRumbleTriggers,
++    .GetCapabilities = TRANSLATOR_JoystickHasLED,
++    .SetLED = TRANSLATOR_JoystickSetLED,
++    .SendEffect = TRANSLATOR_JoystickSendEffect,
++    .SetSensorsEnabled = TRANSLATOR_JoystickSetSensorsEnabled,
++    .Update = TRANSLATOR_JoystickUpdate,
++    .Close = TRANSLATOR_JoystickClose,
++    .Quit = TRANSLATOR_JoystickQuit,
++    .GetGamepadMapping = TRANSLATOR_JoystickGetGamepadMapping
++};
++
++#endif /* SDL_JOYSTICK_TRANSLATOR */
++
++/* vi: set ts=4 sw=4 expandtab: */
+-- 
+2.30.2
+

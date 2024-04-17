@@ -1,0 +1,4 @@
+config BR2_PACKAGE_ODBOOTD
+	bool "odbootd"
+	help
+	  odbootd daemon for odboot-client

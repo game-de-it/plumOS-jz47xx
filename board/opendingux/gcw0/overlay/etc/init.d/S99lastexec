@@ -1,0 +1,4 @@
+#!/bin/sh
+
+mount -o remount,rw /media
+chmod 777 /media /media/data

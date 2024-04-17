@@ -1,0 +1,164 @@
+#!/bin/sh
+
+# Avoid kernel flooding the console
+dmesg -n4
+
+export DIALOGOPTS="--colors --backtitle \"\Zb\Z3OpenDingux Flasher\Zn\""
+echo "screen_color = (RED,RED,ON)" > /tmp/dialog_err.rc
+
+DISCLAIMER="\Zb\Z3IMPORTANT NOTICE\Zn
+
+By using this software, you agree
+that its authors are not liable in
+any way in case of damage to your
+device, your data, or yourself.
+Use it at your own risk.
+
+Do you agree with these terms?"
+
+dialog --defaultno --yesno "$DISCLAIMER" 13 38
+if [ $? -ne 0 ] ; then
+	reboot
+	exit 1
+fi
+
+MODEL=`grep machine /proc/cpuinfo |sed 's/.*: //'`
+case "$MODEL" in
+	RS-90|RG-99)
+		NAND_FLASH=yes
+		;;
+	*)
+		;;
+esac
+
+MODELMSG="Found the following device:
+
+Model:   ${MODEL}
+
+Is this correct?"
+
+dialog --defaultno --yesno "$MODELMSG" 9 42
+if [ $? -ne 0 ] ; then
+	reboot
+	exit 1
+fi
+
+if [ "$NAND_FLASH" = "yes" ] ; then
+	echo "Formatting NAND..."
+	ubiformat /dev/mtd1 -y
+	ubiattach -m1
+	ubimkvol /dev/ubi0 -s 16MiB -N kernel
+	ubimkvol /dev/ubi0 -s 16MiB -N kernel_bak
+	ubimkvol /dev/ubi0 -m -N rootfs
+	ubiupdatevol /dev/ubi0_2 -t
+
+	mount -t ubifs ubi0:rootfs /boot
+else
+	dialog --defaultno --yes-label "F2FS" --no-label "EXT4" --yesno \
+		"What format should be used for the data partition?" 7 38
+	case $? in
+		1)
+			FORMAT=ext4
+			;;
+		0)
+			FORMAT=f2fs
+			;;
+		*)
+			reboot
+			exit 1
+	esac
+
+	clear
+
+	echo "Formatting SD card..."
+	(
+		echo o # Create empty DOS partition table
+		echo n # Create partition
+		echo p # Primary partition
+		echo 1 # First partition
+		echo 2048 # First sector
+		echo 821247 # End sector
+
+		echo n # Create partition
+		echo p # Primary partition
+		echo 2 # Second partition
+		echo 821248 # First sector
+		echo # End sector (use max size)
+
+		echo p # Print partitions
+		echo w # Commit changes
+	) | fdisk /dev/mmcblk0 > /dev/null
+
+	partprobe /dev/mmcblk0
+
+	mkfs.fat -F32 -n boot /dev/mmcblk0p1
+
+	if [ "$FORMAT" = "ext4" ] ; then
+		mkfs.ext4 -F -L system /dev/mmcblk0p2
+	else
+		mkfs.f2fs -f -l system -O extra_attr,compression /dev/mmcblk0p2
+	fi
+
+	mount -t vfat /dev/mmcblk0p1 /boot
+fi
+
+echo "Configuring USB..."
+mkdir /sys/kernel/config/usb_gadget/c1
+mkdir /sys/kernel/config/usb_gadget/c1/strings/0x409
+mkdir /sys/kernel/config/usb_gadget/c1/configs/c.1
+mkdir /sys/kernel/config/usb_gadget/c1/functions/ffs.ffs
+
+PID=`grep system /proc/cpuinfo |sed -n 's/.*\([0-9]\{4\}\).*/\1/p'`
+[ "$PID" -eq 4725 ] && PID=4750 # JZ4725B appears as a JZ4750 in USB boot
+
+if [ "$PID" -ge 4770 ] ; then
+	VID=a108
+else
+	VID=601a
+fi
+
+echo 0x${VID} > /sys/kernel/config/usb_gadget/c1/idVendor
+echo 0x${PID} > /sys/kernel/config/usb_gadget/c1/idProduct
+echo "Ingenic" > /sys/kernel/config/usb_gadget/c1/strings/0x409/manufacturer
+echo "odbootd" > /sys/kernel/config/usb_gadget/c1/strings/0x409/product
+ln -s /sys/kernel/config/usb_gadget/c1/functions/ffs.ffs /sys/kernel/config/usb_gadget/c1/configs/c.1/ffs.ffs
+
+mkdir /dev/ffs
+mount ffs -t functionfs /dev/ffs
+
+echo "Obtain data files from USB..."
+/usr/sbin/odbootd /dev/ffs /sys/kernel/config/usb_gadget/c1/UDC musb-hdrc.0.auto
+
+echo "Installing bootloader..."
+if [ "$NAND_FLASH" = "yes" ] ; then
+	flash_erase /dev/mtd0 0 1
+	nandwrite -p /dev/mtd0 /boot/ubiboot.bin
+else
+	echo -n -e '\x80\x00\x00\x10\x00\x00\x00\x00' | dd of=/dev/mmcblk0 bs=8 count=1 conv=notrunc
+	dd if=/boot/ubiboot.bin of=/dev/mmcblk0 bs=512 seek=1 count=16 conv=notrunc
+fi
+
+echo "Installing mininit..."
+mkdir -p /boot/root /boot/dev
+chmod +x /boot/mininit-syspart
+
+echo "Flashing kernel..."
+cat /boot/uzImage.bin /boot/devicetree.dtb > /boot/kernel.img
+
+if [ "$NAND_FLASH" = "yes" ] ; then
+	ubiupdatevol /dev/ubi0_0 /boot/kernel.img
+	ubiupdatevol /dev/ubi0_1 /boot/kernel.img
+
+	rm /boot/uzImage.bin /boot/kernel.img
+else
+	mv /boot/kernel.img /boot/uzImage.bin
+fi
+
+# Cleanup
+rm /boot/devicetree.dtb /boot/ubiboot.bin
+
+sync
+dialog --msgbox 'Installation succeded!\nThe device will reboot now.' 7 28
+
+reboot -f
+exit 0

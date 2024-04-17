@@ -1,0 +1,4 @@
+#!/bin/sh
+
+HOME="/media/data/local/home"
+/usr/bin/sudo -u root python3 /media/data/local/home/.config/bin/vol.py &

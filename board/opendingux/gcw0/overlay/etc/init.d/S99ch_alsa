@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/media/data/local/home/.config/bin/ch_alsa &

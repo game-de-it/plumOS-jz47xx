@@ -1,0 +1,28 @@
+export PAGER='/bin/less'
+export EDITOR='/bin/vim'
+alias ll="ls -al"
+
+export PATH=/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+IFS= read -r -d $'\0' MODEL </sys/firmware/devicetree/base/compatible
+export MODEL
+
+if [ "$PS1" ]; then
+	if [ "`id -u`" -eq 0 ]; then
+		export PS1='\[\e[01m\]\h\[\e[00m\]:\[\e[01;31m\]\w\[\e[00m\] \# '
+	else
+		export PS1='\[\e[01m\]\h\[\e[00m\]:\[\e[01;31m\]\w\[\e[00m\] \$ '
+	fi
+fi
+
+set -o allexport
+
+. /etc/environment
+
+# Source configuration files from /etc/profile.d
+for i in /etc/profile.d/*.sh ; do
+	if [ -r "$i" ]; then
+		. $i
+	fi
+done
+unset i
+set +o allexport
