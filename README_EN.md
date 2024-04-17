@@ -75,7 +75,7 @@ PASS="fugafuga-password"
 ````
 - Run "WlanON" in the "settings" section of gmenu2x after connecting the wifi device
      - If the LED light on the wifi device lights up, the device is recognized
-
+     - You can check the Wifi IP address by running "System info" in the "settings" section
 
 ## ●OS side hotkey list
 | Button Combo | Action |

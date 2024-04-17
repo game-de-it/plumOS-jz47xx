@@ -75,6 +75,7 @@ PASS="fugafuga-password"
 ```
 - wifiデバイスを接続した後にgmenu2xの「settings」セクションにある「WlanON」を実行します
     - wifiデバイスのLEDライトが点灯すればデバイスは認識されています
+    - WifiのIPアドレスは「settings」セクションの「System info」を実行して確認できます
 
 
 ## ●OS側ホットキー一覧
