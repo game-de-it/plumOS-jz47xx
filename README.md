@@ -13,10 +13,10 @@ custom firmware based on opendingux
  
 ## ●特徴
 - plumOS-jz47xxはOpenDingux(VERSION_ID=2023.11)がベースで作られています
-    - Anbernic RG300XとRG280Vで動作します
+    - Anbernic RG300XとRG350とRG280Vで動作します
 - retroarchは最新版の「1.17.0」を採用
     - 98個のコアが利用可能
-- RG300Xの特徴
+- RG300XとRG350の特徴
     - OTGポートにてUSB-DACとBluetooth-Audioデバイスが利用可能
         - 動作確認が取れているBluetooth-Audio
             - Creative BT-W2
@@ -49,7 +49,7 @@ custom firmware based on opendingux
 - 全てのエミュレータの動作確認は取れていません
 
 ## ●USBネットワーク(RNDIS)接続方法
-- RG300XとRG280Vに接続可能
+- RG300XとRG350とRG280Vに接続可能
 - 最大転送速度はおよそ「3MB/s(24Mbps)」です
 - データ通信が可能なUSBケーブルを使ってUSBポート(OTGポートではない方)とwindowsもしくはMacOSに接続します
     - 注意！　windowsのバージョンによってはRNDISドライバーのインストールが必要になります
