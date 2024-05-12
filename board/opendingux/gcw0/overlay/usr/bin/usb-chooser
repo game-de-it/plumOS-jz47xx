@@ -9,8 +9,6 @@ dialog $DEFAULTNO --yes-label "Mass Storage" --no-label "Ethernet" --yesno "Plea
 if [ $? -eq 0 ] ; then
 	# MTP
 	USB_MODE=mtp
-	/usr/bin/sudo /usr/bin/usb-gadget
-	exit 0
 else
 	# Ethernet over USB
 	[ "$USB_MODE" != "rndis" ] && unset DEFAULTNO

@@ -35,6 +35,7 @@ null::sysinit:/bin/ln -sf /proc/self/fd/2 /dev/stderr
 ::sysinit:/bin/echo '3 4 1 3' > /proc/sys/kernel/printk
 
 tty1::respawn:/usr/bin/sudo -u root /usr/sbin/frontend_start
+# tty1::respawn:/usr/bin/sudo -u root /usr/libexec/gmenu2x
 
 # Stuff to do before rebooting
 ::shutdown:/etc/init.d/rcK
