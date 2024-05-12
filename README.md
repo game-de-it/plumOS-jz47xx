@@ -13,10 +13,10 @@ custom firmware based on opendingux
  
 ## ●特徴
 - plumOS-jz47xxはOpenDingux(VERSION_ID=2023.11)がベースで作られています
-    - Anbernic RG300XとRG350とRG280Vで動作します
+    - Anbernic RG300XとRG350とRG280VとRG350Mで動作します
 - retroarchは最新版の「1.17.0」を採用
     - 98個のコアが利用可能
-- RG300XとRG350の特徴
+- RG300XとRG350とRG350Mの特徴
     - OTGポートにてUSB-DACとBluetooth-Audioデバイスが利用可能
         - 動作確認が取れているBluetooth-Audio
             - Creative BT-W2
@@ -37,21 +37,17 @@ custom firmware based on opendingux
 - SD1側のexFAT領域とSD2側の領域は「/media/data」ディレクトリ配下にマウントされます
     - マウントされるディレクトリ名はSDカードに名付けられた「ラベル名」になります
 - CPUクロックを1200MHzにすると動作が不安定になる場合があります
-- スリープ機能はありません
 - ゲーム動作時にUSBデバイスを抜き差しするとハングアップする可能性がありますので、gmenu2xの画面が表示されている状態でデバイスの抜き差しをしてください
 
 ## ●既知の問題
-- picoarchのメニューが表示されない
-    - ゲームはプレイできますがメニューが表示されないため終了させることができません
-    ホットキー「POW+Y」でOSを再起動してください
-- RG350やRG280V用にビルドされたアプリケーションの一部は利用できません
+- GCW0用のツールチェーンでビルドされたアプリケーションの一部は利用できません
     - コマンダーやgmuやffplayなど
 - 全てのエミュレータの動作確認は取れていません
 
-## ●USBネットワーク(RNDIS)接続方法
-- RG300XとRG350とRG280Vに接続可能
+## ●USBネットワーク(cdc/RNDIS)接続方法
 - 最大転送速度はおよそ「3MB/s(24Mbps)」です
 - データ通信が可能なUSBケーブルを使ってUSBポート(OTGポートではない方)とwindowsもしくはMacOSに接続します
+- USBケーブルを接続したらplumOS-jz47xxを再起動してください
     - 注意！　windowsのバージョンによってはRNDISドライバーのインストールが必要になります
 - 接続情報
     - デバイス側のIPアドレスは「10.1.1.2」
@@ -82,7 +78,7 @@ PASS="fugafuga-password"
 ## ●OS側ホットキー一覧
 | Button Combo | Action | 
 |:-----------|------------:|
-| POW+Y       |        OS再起動 |
+| POW+Y       |        スリープ |
 | POW+X       |        スクリーンショット(/media/data/local/home/screenshots/　ディレクトリに保存されます) |
 | POW+B       |        マウスモード？(十字キーが効かなくなるので元に戻す場合は再度POW+Bを押してください) |
 | POW＋ 十字キーの左右       |        画面輝度の変更 |
@@ -97,5 +93,29 @@ PASS="fugafuga-password"
 | SELECT+L     |      ステートロード |
 | SELECT+R2     |      fastforward |
 | SELECT+L2     |      スローモーション |
+
+
+## ●picoarchのホットキー
+
+Oprion→Emulator controlsから設定して、save configを実行してください
+
+| Button Combo | Action | 
+|:-----------|------------:|
+| SELECT+START       |        メニュー表示 |
+| SELECT＋X       |    未設定     |
+| SELECT+R       |     未設定    |
+| SELECT+L     |     未設定  |
+| SELECT+R2     |   未設定    |
+| SELECT+L2     |   未設定    |
+
+
+## ●ディレクトリ情報
+
+| emulator | path | 
+|:-----------|------------:|
+| retroarch       |   /media/data/local/home/.retroarch/system      |
+| picoarch       |    /media/data/picoarch/bios     |
+| standalone emu       |     /media/data/local/home 配下にあるemuディレクトリ    |
+
 
 以上
