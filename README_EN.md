@@ -43,6 +43,7 @@ You can download it from "Releases" in the menu on the right side of the screen.
 - Some applications built with toolchains for GCW0 are not available
      - Commander, gmu, ffplay, etc.
 - Operation of all emulators has not been confirmed.
+- On RG280V, if you continue to run picoarch for several minutes, the screen may become distorted, so please press the reset button.
 
 ## ●USB network (cdc/RNDIS) connection method
 - Maximum transfer speed is approximately 3MB/s (24Mbps)
